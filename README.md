@@ -11,6 +11,7 @@ cbBTC on this thin pool mostly drifts a few basis points a minute, then a whale 
 
 - **Entry** (flat only): the 60-minute close-to-close return is at least **+130 bps** (momentum — ride a spike) or at most **−110 bps** (dip — buy the crash). Full cash, one position, long only.
 - **Exit** (holding): a trailing stop **0.9%** below the highest close since entry, or a **300-bar (5h)** time stop, whichever comes first. Checked on every bar's close; fills land at the next bar's open.
+- **Fallback**: if no trade has filled by halfway through the window (a quiet day with no whale move), a slow-trend entry takes over — a 480-minute return of +150 bps or more — with the same exits, so the bot never ends a window with zero trades. It never triggers on the dev window.
 - **Slippage cap**: every order caps slippage at 100 bps past the close it was decided on.
 
 Everything is a pure function of the bars the harness sends — no clock, no network, no randomness — so two runs on the same data answer byte for byte the same.
