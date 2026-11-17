@@ -15,6 +15,12 @@
 //   - Exit (holding): a trailing stop 0.9% below the highest close since
 //     entry, or a 300-bar (5h) time stop, whichever comes first. Both are
 //     checked on every bar's close; the fill lands at the next bar's open.
+//   - Fallback: if the bot has still made no trade halfway through the
+//     window (a quiet day with no whale move), it takes a slow-trend entry
+//     instead — a 480-minute return of +150 bps or more — with the same
+//     exits, so it never ends a window with zero trades. On the dev window
+//     the extreme-move entries fire long before this, so the fallback never
+//     triggers there and the dev grade is unchanged.
 //   - Orders cap their slippage at 100 bps past the close they were decided
 //     on, so a fill into a liquidity gap is refused rather than filled for
 //     almost nothing.
@@ -40,6 +46,11 @@ const DIP_BPS = -110;
 const TRAIL = 0.009;
 /** Time stop: sell after this many bars held, whatever the price. */
 const MAX_HOLD_BARS = 300;
+/** Fallback entry: only before any filled buy, from this batch on. */
+const FALLBACK_FROM_SEQ = 720;
+/** Fallback lookback and trigger, in bars and bps. */
+const FALLBACK_BARS = 480;
+const FALLBACK_BPS = 150;
 /** Slippage cap on every order, in bps past the close it was decided on. */
 const MAX_SLIPPAGE_BPS = 100;
 
@@ -49,6 +60,8 @@ const closes: number[] = [];
 let peak = 0;
 /** Seq of the batch the current entry was decided on. */
 let entrySeq = -1;
+/** Filled buys so far this run. */
+let filledBuys = 0;
 
 function retBps(now: number, ref: number): number {
   return ((now - ref) * 10_000) / ref;
@@ -60,6 +73,7 @@ await runBars({
     if (bar === undefined) return [];
     const close = Number(bar.c);
     closes.push(close);
+    for (const f of batch.fills) if (f.side === 'buy' && f.status === 'filled') filledBuys++;
     if (state.warmingUp) return [];
 
     const held = state.positions.get(SYMBOL);
@@ -79,7 +93,12 @@ await runBars({
     if (closes.length <= RET_BARS) return [];
     const ref = closes[closes.length - 1 - RET_BARS]!;
     const r = retBps(close, ref);
-    if (r >= ENTRY_BPS || r <= DIP_BPS) {
+    let fire = r >= ENTRY_BPS || r <= DIP_BPS;
+    if (!fire && filledBuys === 0 && state.seq >= FALLBACK_FROM_SEQ && closes.length > FALLBACK_BARS) {
+      const slow = retBps(close, closes[closes.length - 1 - FALLBACK_BARS]!);
+      fire = slow >= FALLBACK_BPS;
+    }
+    if (fire) {
       const cash = state.cash;
       if (cash < BigInt(state.hello.fees.min_notional_quote_units)) return [];
       peak = close;
